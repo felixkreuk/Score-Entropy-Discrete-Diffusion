@@ -1,9 +1,11 @@
+from tokenize_dataset import process_dataset
 import re
 from transformers import GPT2TokenizerFast
 from datasets import load_dataset
 from itertools import chain
 import numpy as np
 import torch
+import torch.distributed as dist
 
 import urllib.request
 import zipfile
@@ -174,7 +176,19 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
             token.append(EOS)
         return tokens
 
-    tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
+    # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
+    if dist.get_rank() == 0:
+        tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 10,
+                                            "cache", num_proc=32, load_from_cache_file=False,
+                                            cache_file_name=None)["data"]
+        print(tokenized_dataset)
+        dist.barrier()
+    else:
+        dist.barrier()
+        tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 10,
+                                            "cache", num_proc=32, load_from_cache_file=False,
+                                            cache_file_name=None)["data"]
+    dist.barrier()
     if name == "ptb":
         tokenized_dataset = tokenized_dataset.remove_columns('sentence')
     else:

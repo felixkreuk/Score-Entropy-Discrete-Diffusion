@@ -4,12 +4,15 @@ import os
 import pickle
 from tqdm import trange
 
-def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_dir: str):
+def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_dir: str, **kwargs):
    # Create output directory if it doesn't exist
    if not os.path.exists(output_dir):
       os.makedirs(output_dir)
 
    processed_datasets = {}
+
+   if not isinstance(dataset_dict, dict):
+      dataset_dict = {"data": dataset_dict}
 
    for dataset_name, dataset in dataset_dict.items():
       processed_chunks = []
@@ -27,7 +30,7 @@ def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_d
                print(f"{chunk_file} computing")
                # Shard the dataset and process the chunk
                chunk = dataset.shard(K, i)
-               processed_chunk = chunk.map(map_function, batched=True, num_proc=8)
+               processed_chunk = chunk.map(map_function, batched=True, **kwargs)
                # Save the processed chunk to disk
                with open(chunk_file, 'wb') as f:
                   pickle.dump(processed_chunk, f)
