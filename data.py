@@ -177,8 +177,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         return tokens
 
     # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
-    tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 10,
-                                        "cache", num_proc=32, load_from_cache_file=False,
+    tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
+                                        f"/fsx-codegen/felixkreuk/datasets/{name}/tokenized",
+                                        num_proc=8, load_from_cache_file=False,
                                         cache_file_name=None)["data"]
     dist.barrier()
     if name == "ptb":
