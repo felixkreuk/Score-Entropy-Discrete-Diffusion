@@ -3,6 +3,24 @@ from transformers import GPT2TokenizerFast
 import os
 import pickle
 from tqdm import trange
+import errno
+from time import sleep
+
+
+def create_lock_file(lock_file):
+    try:
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL)
+        # Lock file created successfully, you can now write to it if needed
+        os.close(fd)
+        return True
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            # print(f"Lock file {lock_file} already exists.")
+            return False
+        else:
+            # An unexpected error occurred
+            raise
+
 
 def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_dir: str, **kwargs):
    # Create output directory if it doesn't exist
@@ -20,21 +38,37 @@ def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_d
       for i in trange(K):
          # Check if this chunk has already been processed
          chunk_file = os.path.join(output_dir, f'{dataset_name}_chunk_{i}.pickle')
+         lock_file = chunk_file + ".lock"
 
          if os.path.exists(chunk_file):
-               print(f"{chunk_file} exists")
-               # Load the processed chunk from disk
-               with open(chunk_file, 'rb') as f:
-                  processed_chunk = pickle.load(f)
-         else:
-               print(f"{chunk_file} computing")
-               # Shard the dataset and process the chunk
-               chunk = dataset.shard(K, i)
-               processed_chunk = chunk.map(map_function, batched=True, **kwargs)
-               # Save the processed chunk to disk
-               with open(chunk_file, 'wb') as f:
-                  pickle.dump(processed_chunk, f)
+            continue
 
+         if create_lock_file(lock_file):
+            print(f"{chunk_file} computing")
+            # Shard the dataset and process the chunk
+            chunk = dataset.shard(K, i)
+            processed_chunk = chunk.map(map_function, batched=True, **kwargs)
+            # Save the processed chunk to disk
+            with open(chunk_file, 'wb') as f:
+               pickle.dump(processed_chunk, f)
+            os.remove(lock_file)
+         else:
+            continue
+
+      while True:
+         exist = 0
+         for i in range(K):
+            chunk_file = os.path.join(output_dir, f'{dataset_name}_chunk_{i}.pickle')
+            if os.path.exists(chunk_file):
+               exist += 1
+         if exist == K:
+            break
+         sleep(1)
+
+      for i in trange(K):
+         # Load the processed chunk from disk
+         with open(chunk_file, 'rb') as f:
+            processed_chunk = pickle.load(f)
          processed_chunks.append(processed_chunk)
 
       # Merge the processed chunks into a single dataset
