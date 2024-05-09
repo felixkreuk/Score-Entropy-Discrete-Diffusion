@@ -6,6 +6,7 @@ from itertools import chain
 import numpy as np
 import torch
 import torch.distributed as dist
+import os.path as osp
 
 import urllib.request
 import zipfile
@@ -177,8 +178,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         return tokens
 
     # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
+    base_dir_cache = osp.join("/fsx-codegen/felixkreuk/datasets", name)
     tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
-                                        f"/fsx-codegen/felixkreuk/datasets/{name}/tokenized",
+                                        osp.join(base_dir_cache, "tokenized"),
                                         num_proc=8, load_from_cache_file=False,
                                         cache_file_name=None)["data"]
     dist.barrier()
@@ -202,7 +204,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         }
         return result
 
-    chunked_dataset = tokenized_dataset.map(group_texts, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='group_texts.cache')
+    chunked_dataset = tokenized_dataset.map(group_texts, batched=True,
+                                            num_proc=num_proc, load_from_cache_file=True,
+                                            cache_file_name=osp.join(base_dir_cache, "group_texts.cache"))
     chunked_dataset = chunked_dataset.with_format('torch')
 
     return chunked_dataset

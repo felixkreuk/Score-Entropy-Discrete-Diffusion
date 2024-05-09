@@ -25,7 +25,7 @@ def create_lock_file(lock_file):
 def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_dir: str, **kwargs):
    # Create output directory if it doesn't exist
    if not os.path.exists(output_dir):
-      os.makedirs(output_dir)
+      os.makedirs(output_dir, exist_ok=True)
 
    processed_datasets = {}
 
