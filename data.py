@@ -124,7 +124,7 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     elif name == "ptb":
         dataset = load_dataset("ptb_text_only", cache_dir=cache_dir)
     elif name == "c4":
-        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4")
+        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4", cache_dir="/fsx-codegen/felixkreuk/datasets/c4")
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
@@ -174,7 +174,7 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
             token.append(EOS)
         return tokens
 
-    tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True)
+    tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
     if name == "ptb":
         tokenized_dataset = tokenized_dataset.remove_columns('sentence')
     else:
@@ -195,7 +195,7 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         }
         return result
 
-    chunked_dataset = tokenized_dataset.map(group_texts, batched=True, num_proc=num_proc, load_from_cache_file=True)
+    chunked_dataset = tokenized_dataset.map(group_texts, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='group_texts.cache')
     chunked_dataset = chunked_dataset.with_format('torch')
 
     return chunked_dataset
