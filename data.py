@@ -123,6 +123,8 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         dataset = load_dataset("wikitext", name="wikitext-2-raw-v1", cache_dir=cache_dir)
     elif name == "ptb":
         dataset = load_dataset("ptb_text_only", cache_dir=cache_dir)
+    elif name == "c4":
+        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4")
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
@@ -161,23 +163,23 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
             text = example["text"]
         # print(list(example.keys()))
         # exit()
-        
+
         if detokenizer is not None:
             text = _apply_detokenizer(detokenizer)(text)
 
         tokens = tokenizer(text, return_attention_mask=False)
-        # add in EOS token following 
+        # add in EOS token following
         # https://github.com/jcpeterson/openwebtext/blob/master/tokenize_text.py#L67
         for token in tokens['input_ids']:
             token.append(EOS)
         return tokens
-    
+
     tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True)
     if name == "ptb":
         tokenized_dataset = tokenized_dataset.remove_columns('sentence')
     else:
         tokenized_dataset = tokenized_dataset.remove_columns('text')
-    
+
 
     def group_texts(examples):
         # Concatenate all texts.
@@ -210,12 +212,12 @@ def get_dataloaders(config, distributed=True):
     valid_set = get_dataset(config.data.valid, "validation" if config.data.valid != "text8" else "test", cache_dir=config.data.cache_dir, block_size=config.model.length)
 
     if distributed:
-        train_sampler = DistributedSampler(train_set) 
+        train_sampler = DistributedSampler(train_set)
         test_sampler = DistributedSampler(valid_set)
     else:
         train_sampler = None
         test_sampler = None
-    
+
 
     train_loader = cycle_loader(DataLoader(
         train_set,

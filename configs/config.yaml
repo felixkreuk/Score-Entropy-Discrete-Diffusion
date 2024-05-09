@@ -9,7 +9,8 @@ tokens: 50257
 training:
   batch_size: 512
   accum: 1
-  n_iters: 1300001
+  n_iters: 500000
+  # n_iters: 1300001
   snapshot_freq: 50000
   log_freq: 50
   eval_freq: 100
@@ -19,7 +20,7 @@ training:
   ema: 0.9999
 
 data:
-  train: openwebtext
+  train: c4
   valid: wikitext103
   cache_dir: data
 
