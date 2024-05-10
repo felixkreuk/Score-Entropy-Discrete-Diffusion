@@ -11,9 +11,9 @@ training:
   accum: 1
   n_iters: 500000
   # n_iters: 1300001
-  snapshot_freq: 50000
+  snapshot_freq: 10000
   log_freq: 50
-  eval_freq: 100
+  eval_freq: 10000
   snapshot_freq_for_preemption: 10000
   weight: standard
   snapshot_sampling: True
