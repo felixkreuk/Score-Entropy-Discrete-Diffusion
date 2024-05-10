@@ -54,6 +54,7 @@ def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_d
             os.remove(lock_file)
          else:
             continue
+      print("launched all shards")
 
       while True:
          exist = 0
@@ -63,7 +64,9 @@ def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_d
                exist += 1
          if exist == K:
             break
+         print(f"waiting ({exist}/{K})")
          sleep(1)
+      print("finished waiting")
 
       for i in trange(K):
          # Load the processed chunk from disk
@@ -72,7 +75,10 @@ def process_dataset(dataset_dict: dict, map_function: callable, K: int, output_d
          processed_chunks.append(processed_chunk)
 
       # Merge the processed chunks into a single dataset
+      print("merging chunks...")
       processed_datasets[dataset_name] = concatenate_datasets(processed_chunks)
+      print(processed_datasets[dataset_name])
+      print(f"{dataset_name} merged")
 
    return processed_datasets
 

@@ -178,7 +178,7 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         return tokens
 
     # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
-    base_dir_cache = osp.join("/fsx-codegen/felixkreuk/datasets", name)
+    base_dir_cache = osp.join("/fsx-codegen/felixkreuk/datasets_v2", name)
     tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
                                         osp.join(base_dir_cache, "tokenized"),
                                         num_proc=8, load_from_cache_file=False,
@@ -186,6 +186,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     dist.barrier()
     if name == "ptb":
         tokenized_dataset = tokenized_dataset.remove_columns('sentence')
+    elif name == "c4":
+        tokenized_dataset = tokenized_dataset.remove_columns("url")
+        tokenized_dataset = tokenized_dataset.remove_columns("timestamp")
     else:
         tokenized_dataset = tokenized_dataset.remove_columns('text')
 
@@ -204,9 +207,13 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         }
         return result
 
-    chunked_dataset = tokenized_dataset.map(group_texts, batched=True,
-                                            num_proc=num_proc, load_from_cache_file=True,
-                                            cache_file_name=osp.join(base_dir_cache, "group_texts.cache"))
+    # chunked_dataset = tokenized_dataset.map(group_texts, batched=True,
+    #                                         num_proc=num_proc, load_from_cache_file=True,
+    #                                         cache_file_name=osp.join(base_dir_cache, "group_texts.cache"))
+    tokenized_dataset = process_dataset(tokenized_dataset, group_texts, 512,
+                                        osp.join(base_dir_cache, "group_texts"),
+                                        num_proc=8, load_from_cache_file=False,
+                                        cache_file_name=None)["data"]
     chunked_dataset = chunked_dataset.with_format('torch')
 
     return chunked_dataset
