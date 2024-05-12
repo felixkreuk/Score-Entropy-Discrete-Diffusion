@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import os.path as osp
+import pathlib
+
 
 import urllib.request
 import zipfile
@@ -119,6 +121,8 @@ def get_lambada_test_dataset():
     return dataset
 
 
+CACHE = "/fsx-audio-craft-llm/felixkreuk/datasets_v2"
+
 def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     if name == "wikitext103":
         dataset = load_dataset("wikitext", name="wikitext-103-raw-v1", cache_dir=cache_dir)
@@ -127,13 +131,17 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     elif name == "ptb":
         dataset = load_dataset("ptb_text_only", cache_dir=cache_dir)
     elif name == "c4":
-        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4", cache_dir="/fsx-codegen/felixkreuk/datasets/c4")
+        global CACHE
+        CACHE = osp.join(CACHE, "c4")
+        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4", split=mode, cache_dir=CACHE, num_proc=32)
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
         dataset = load_dataset(name, cache_dir=cache_dir)
 
     if name == "lambada":
+        data = dataset
+    elif name == "c4":
         data = dataset
     else:
         data = dataset[mode]
@@ -178,7 +186,8 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
         return tokens
 
     # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
-    base_dir_cache = osp.join("/fsx-codegen/felixkreuk/datasets_v2", name)
+    print("starting tokenization")
+    base_dir_cache = osp.join(CACHE, name)
     tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
                                         osp.join(base_dir_cache, "tokenized"),
                                         num_proc=8, load_from_cache_file=False,
@@ -210,9 +219,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     # chunked_dataset = tokenized_dataset.map(group_texts, batched=True,
     #                                         num_proc=num_proc, load_from_cache_file=True,
     #                                         cache_file_name=osp.join(base_dir_cache, "group_texts.cache"))
-    tokenized_dataset = process_dataset(tokenized_dataset, group_texts, 512,
+    chunked_dataset = process_dataset(tokenized_dataset, group_texts, 512,
                                         osp.join(base_dir_cache, "group_texts"),
-                                        num_proc=8, load_from_cache_file=False,
+                                        num_proc=32, load_from_cache_file=False,
                                         cache_file_name=None)["data"]
     chunked_dataset = chunked_dataset.with_format('torch')
 
