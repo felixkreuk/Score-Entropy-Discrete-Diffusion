@@ -2,6 +2,7 @@ from tokenize_dataset import process_dataset
 import re
 from transformers import GPT2TokenizerFast
 from datasets import load_dataset
+from datasets.distributed import split_dataset_by_node
 from itertools import chain
 import numpy as np
 import torch
@@ -121,7 +122,38 @@ def get_lambada_test_dataset():
     return dataset
 
 
+# -----------------------------------------------------
 CACHE = "/fsx-audio-craft-llm/felixkreuk/datasets_v2"
+tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+EOS = tokenizer.encode(tokenizer.eos_token)[0]
+BLOCK_SIZE = 512
+
+
+def preprocess_and_tokenize(example):
+    global EOS, tokenizer
+    text = example["text"]
+    tokens = tokenizer(text, return_attention_mask=False)
+    for token in tokens['input_ids']:
+        token.append(EOS)
+    return tokens
+
+
+def group_texts(examples):
+    global BLOCK_SIZE
+    # Concatenate all texts.
+    concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+    # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+    total_length = (total_length // BLOCK_SIZE) * BLOCK_SIZE
+    # Split by chunks of max_len.
+    result = {
+        k: [t[i : i + BLOCK_SIZE] for i in range(0, total_length, BLOCK_SIZE)]
+        for k, t in concatenated_examples.items()
+    }
+    return result
+# -----------------------------------------------------
+
 
 def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     if name == "wikitext103":
@@ -133,7 +165,9 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     elif name == "c4":
         global CACHE
         CACHE = osp.join(CACHE, "c4")
-        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4", split=mode, cache_dir=CACHE, num_proc=32)
+        dataset = load_dataset("/fsx-labs/broz/data/shuffled/c4", split=mode, cache_dir=CACHE, streaming=True)
+        dataset = dataset.shuffle(seed=42, buffer_size=10_000)
+        dataset = split_dataset_by_node(dataset, world_size=dist.get_world_size(), rank=dist.get_rank())
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
@@ -167,62 +201,62 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
     EOS = tokenizer.encode(tokenizer.eos_token)[0]
 
-    def preprocess_and_tokenize(example):
-        if name == "ptb":
-            text = example['sentence']
-        else:
-            text = example["text"]
-        # print(list(example.keys()))
-        # exit()
+    # def preprocess_and_tokenize(example):
+    #     if name == "ptb":
+    #         text = example['sentence']
+    #     else:
+    #         text = example["text"]
+    #     # print(list(example.keys()))
+    #     # exit()
 
-        if detokenizer is not None:
-            text = _apply_detokenizer(detokenizer)(text)
+    #     if detokenizer is not None:
+    #         text = _apply_detokenizer(detokenizer)(text)
 
-        tokens = tokenizer(text, return_attention_mask=False)
-        # add in EOS token following
-        # https://github.com/jcpeterson/openwebtext/blob/master/tokenize_text.py#L67
-        for token in tokens['input_ids']:
-            token.append(EOS)
-        return tokens
+    #     tokens = tokenizer(text, return_attention_mask=False)
+    #     # add in EOS token following
+    #     # https://github.com/jcpeterson/openwebtext/blob/master/tokenize_text.py#L67
+    #     for token in tokens['input_ids']:
+    #         token.append(EOS)
+    #     return tokens
 
-    # tokenized_dataset = data.map(preprocess_and_tokenize, batched=True, num_proc=num_proc, load_from_cache_file=True, cache_file_name='preprocess_and_tokenize.cache')
-    print("starting tokenization")
-    base_dir_cache = osp.join(CACHE, name)
-    tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
-                                        osp.join(base_dir_cache, "tokenized"),
-                                        num_proc=8, load_from_cache_file=False,
-                                        cache_file_name=None)["data"]
-    dist.barrier()
+    tokenized_dataset = data.map(preprocess_and_tokenize, batched=True)
+    # base_dir_cache = osp.join(CACHE, name)
+    # tokenized_dataset = tokenized_dataset.with_format('torch')
+    # print("starting tokenization")
+    # tokenized_dataset = process_dataset(data, preprocess_and_tokenize, 512,
+    #                                     osp.join(base_dir_cache, "tokenized"),
+    #                                     num_proc=8, load_from_cache_file=False,
+    #                                     cache_file_name=None)["data"]
+    # dist.barrier()
     if name == "ptb":
         tokenized_dataset = tokenized_dataset.remove_columns('sentence')
     elif name == "c4":
         tokenized_dataset = tokenized_dataset.remove_columns("url")
         tokenized_dataset = tokenized_dataset.remove_columns("timestamp")
+        tokenized_dataset = tokenized_dataset.remove_columns("text")
     else:
         tokenized_dataset = tokenized_dataset.remove_columns('text')
 
 
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
-        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-        total_length = (total_length // block_size) * block_size
-        # Split by chunks of max_len.
-        result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
-        return result
+    # def group_texts(examples):
+    #     # Concatenate all texts.
+    #     concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+    #     total_length = len(concatenated_examples[list(examples.keys())[0]])
+    #     # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+    #     # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+    #     total_length = (total_length // block_size) * block_size
+    #     # Split by chunks of max_len.
+    #     result = {
+    #         k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+    #         for k, t in concatenated_examples.items()
+    #     }
+    #     return result
 
-    # chunked_dataset = tokenized_dataset.map(group_texts, batched=True,
-    #                                         num_proc=num_proc, load_from_cache_file=True,
-    #                                         cache_file_name=osp.join(base_dir_cache, "group_texts.cache"))
-    chunked_dataset = process_dataset(tokenized_dataset, group_texts, 512,
-                                        osp.join(base_dir_cache, "group_texts"),
-                                        num_proc=32, load_from_cache_file=False,
-                                        cache_file_name=None)["data"]
+    chunked_dataset = tokenized_dataset.map(group_texts, batched=True)
+    # chunked_dataset = process_dataset(tokenized_dataset, group_texts, 512,
+    #                                     osp.join(base_dir_cache, "group_texts"),
+    #                                     num_proc=32, load_from_cache_file=False,
+    #                                     cache_file_name=None)["data"]
     chunked_dataset = chunked_dataset.with_format('torch')
 
     return chunked_dataset
@@ -238,13 +272,12 @@ def get_dataloaders(config, distributed=True):
     train_set = get_dataset(config.data.train, "train", cache_dir=config.data.cache_dir, block_size=config.model.length)
     valid_set = get_dataset(config.data.valid, "validation" if config.data.valid != "text8" else "test", cache_dir=config.data.cache_dir, block_size=config.model.length)
 
-    if distributed:
+    if distributed and not isinstance(train_set, torch.utils.data.IterableDataset):
         train_sampler = DistributedSampler(train_set)
         test_sampler = DistributedSampler(valid_set)
     else:
         train_sampler = None
         test_sampler = None
-
 
     train_loader = cycle_loader(DataLoader(
         train_set,
@@ -252,7 +285,8 @@ def get_dataloaders(config, distributed=True):
         sampler=train_sampler,
         num_workers=4,
         pin_memory=True,
-        shuffle=(train_sampler is None),
+        shuffle=False,
+        # shuffle=(train_sampler is None),
         persistent_workers=True,
     ))
     valid_loader = cycle_loader(DataLoader(
@@ -261,7 +295,8 @@ def get_dataloaders(config, distributed=True):
         sampler=test_sampler,
         num_workers=4,
         pin_memory=True,
-        shuffle=(test_sampler is None),
+        shuffle=False,
+        # shuffle=(test_sampler is None),
     ))
     return train_loader, valid_loader
 
